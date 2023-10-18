@@ -25,23 +25,33 @@
 #define ROTARY_ENCODER_STEPS 4
 
 
+// MAC of Receiver Address
+uint8_t receiverAddress[] = {0xEC, 0xFA, 0xBC, 0x7A, 0x7E, 0x88};
+esp_now_peer_info_t peerInfo;
+
 // Globale Variablen
-uint8_t broadcastAddress[] = {0xEC, 0xFA, 0xBC, 0x7A, 0x7E, 0x88};
 int distance,duration;
 RTC_DATA_ATTR int counter = 0;
-RTC_DATA_ATTR long NORMALDISTANZ = 0;
+RTC_DATA_ATTR long SchwellenDistanz = 0;
 RTC_DATA_ATTR bool motionDetected = false;
 RTC_DATA_ATTR bool occupied = false;
 
 AiEsp32RotaryEncoder rotaryEncoder = AiEsp32RotaryEncoder(ROTARY_ENCODER_A_PIN, ROTARY_ENCODER_B_PIN, ROTARY_ENCODER_BUTTON_PIN, ROTARY_ENCODER_VCC_PIN, ROTARY_ENCODER_STEPS);
 
-esp_now_peer_info_t peerInfo;
-// Variablen fÃ¼r WLAN
-typedef struct message {
-  bool status_WC;
-  int distanz_WC;
-} message;
-struct message myMessage;
+// Data for ESP-Now connection
+typedef struct messageToBeSent {
+  bool statusWC;
+  int distanzWC;
+} messageToBeSent;
+
+typedef struct receivedMessage {
+  bool changeDistance;
+  int setDistance;
+} receivedMessage;
+
+messageToBeSent myMessageToBeSent;
+receivedMessage myReceivedMessage;
+
 
 // Funktion zum Messen des Abstands mit dem Ultraschallsensor
 int measureDistance() {
@@ -61,13 +71,18 @@ int measureDistance() {
 }
 
 // callback when data is sent
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+void messageSent(const uint8_t *macAddr, esp_now_send_status_t status) {
   Serial.print("\r\nLast Packet Send Status:\t");
   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
 }
 
+// callback when data is received
+void messageReceived(const uint8_t* macAddr, const uint8_t* incomingData, int len){
+    memcpy(&myReceivedMessage, incomingData, sizeof(myReceivedMessage));
+}
+
 void IRAM_ATTR detectsMovement() {
-  myMessage.status_WC = true;
+  myMessageToBeSent.statusWC = true;
 }
 
 void IRAM_ATTR readEncoderISR()
@@ -75,21 +90,46 @@ void IRAM_ATTR readEncoderISR()
     rotaryEncoder.readEncoder_ISR();
 }
 
-void rotary_loop()
-{
-  Serial.println("Rotary Abfrage");
-
-  while(digitalRead(CALIB_PIN)){
-
-    if (rotaryEncoder.encoderChanged())
-      {
-        Serial.print("Value: ");
-        Serial.println(rotaryEncoder.readEncoder());
-        NORMALDISTANZ = rotaryEncoder.readEncoder();
-        delay(100);
-      }
-    delay(100);
+// Change the set distance through the other ESP32
+void changeDistance(){
+  Serial.println("Pruefen ob neue Distanz eingestellt wird");
+  Serial.println(myReceivedMessage.changeDistance);
+  while(myReceivedMessage.changeDistance){
+    SchwellenDistanz = myReceivedMessage.setDistance;
+    Serial.println("Empfangene Distanz");
+    Serial.println(myReceivedMessage.changeDistance);
+    esp_err_t result = esp_now_send(receiverAddress, (uint8_t *) &myMessageToBeSent, sizeof(myMessageToBeSent));
+    Serial.println(result == ESP_OK ? "Delivery Success" : "Delivery Fail");
+    delay(500);
   }
+}
+
+void InitESPNow(){
+  // WIFI Einstellungen
+  WiFi.mode(WIFI_STA);
+
+  // Init ESP-NOW
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
+
+  // Once ESPNow is successfully Init, we will register for Send CB to
+  // get the status of Trasnmitted packet
+  esp_now_register_send_cb(messageSent);  
+  esp_now_register_recv_cb(messageReceived); 
+
+  // Register peer
+  memcpy(peerInfo.peer_addr, receiverAddress, 6);
+  peerInfo.channel = 0;  
+  peerInfo.encrypt = false;
+  
+  // Add peer        
+  if (esp_now_add_peer(&peerInfo) != ESP_OK){
+    Serial.println("Failed to add peer");
+    return;
+  }
+
 }
 
 void Ausgabe(){
@@ -97,12 +137,25 @@ void Ausgabe(){
   Serial.print("Distanz: ");
   Serial.println(distance);
   Serial.print("Normaldistanz: ");
-  Serial.println(NORMALDISTANZ);
+  Serial.println(SchwellenDistanz);
   Serial.print("Counter ");
   Serial.println(counter);
   Serial.print("motionDetected ");
   Serial.println(motionDetected);
 
+}
+
+bool MotionDetection(){
+  bool motion = false;
+  if (digitalRead(PIN_MOTION_SENSOR) == HIGH) {
+      motion = true;
+      Serial.println("Motion detected");
+      digitalWrite(BUILTIN_LED, HIGH);
+      delay(500);
+      digitalWrite(BUILTIN_LED,LOW); 
+    }
+
+  return motion;
 }
 
 void setup() {
@@ -125,29 +178,6 @@ void setup() {
   rotaryEncoder.setBoundaries(0, 1000, circleValues); //minValue, maxValue, circleValues true|false (when max go to min and vice versa)
   rotaryEncoder.setAcceleration(250);
 
-  // WIFI Einstellungen
-  WiFi.mode(WIFI_STA);
-  // Init ESP-NOW
-  if (esp_now_init() != ESP_OK) {
-    Serial.println("Error initializing ESP-NOW");
-    return;
-  }
-
-  // Once ESPNow is successfully Init, we will register for Send CB to
-  // get the status of Trasnmitted packet
-  esp_now_register_send_cb(OnDataSent);
-
-    // Register peer
-  memcpy(peerInfo.peer_addr, broadcastAddress, 6);
-  peerInfo.channel = 0;  
-  peerInfo.encrypt = false;
-  
-  // Add peer        
-  if (esp_now_add_peer(&peerInfo) != ESP_OK){
-    Serial.println("Failed to add peer");
-    return;
-  }
-
   if (counter > 0){
     esp_sleep_enable_timer_wakeup(uS_TO_S_FACTOR * TIME_TO_SLEEP);
   }else{
@@ -156,56 +186,40 @@ void setup() {
 }
 
 void loop() {
-  // In den Tiefschlaf versetzen
-  rotary_loop();
-
   // Wenn der Bewegungsmelder eine Bewegung detektiert hat
-  myMessage.status_WC = occupied;
-  esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &myMessage, sizeof(myMessage));
-  if (result == ESP_OK) {
-    Serial.println("Sent with success");
-  }
-  else {
-    Serial.println("Error sending the data");
-  }
+  myMessageToBeSent.statusWC = occupied;
+  esp_err_t result = esp_now_send(receiverAddress, (uint8_t *) &myMessageToBeSent, sizeof(myMessageToBeSent));
+  Serial.println(result == ESP_OK ? "Delivery Success" : "Delivery Fail");
 
+  // Checks if changes to referenc distance habe been made
+  changeDistance();
 
-  if (digitalRead(PIN_MOTION_SENSOR) == HIGH) {
   
-    motionDetected = true;
-    digitalWrite(BUILTIN_LED, HIGH);
-    delay(500);
-    digitalWrite(BUILTIN_LED,LOW); 
-  }
-
 
 /*  if (digitalRead(PIN_MOTION_SENSOR) == LOW && counter) {
     esp_deep_sleep_start();
   }*/
-  
-  Serial.print("motionDetected in general ");
-  Serial.println(motionDetected);
 
   // Wenn sich jemand in der NÃ¤he befindet, den ESP32 wieder in den Tiefschlaf versetzen
-  if (motionDetected) {
+  if (MotionDetection || motionDetected) {
+    motionDetected = true;
     distance = measureDistance();
     delay(100);
     distance = measureDistance();
-
-
     
-      // Ultraschallsensor noch einmal messen, um den Wert zu bestÃ¤tigen
-    if (distance >= NORMALDISTANZ && counter >= 3) {
+      // Ultraschallsensor noch einmal messen, um den Wert zu bestaetigen
+    if (distance >= SchwellenDistanz && counter >= 3) {
       occupied = false;
       motionDetected = false;
       counter = 0;
+
       Serial.println("External Wakeup");
       Serial.println("myData.d = false");
 
-      myMessage.distanz_WC = distance;
-      myMessage.status_WC = occupied;
+      myMessageToBeSent.distanzWC = distance;
+      myMessageToBeSent.statusWC = occupied;
 
-      esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &myMessage, sizeof(myMessage));
+      esp_err_t result = esp_now_send(receiverAddress, (uint8_t *) &myMessageToBeSent, sizeof(myMessageToBeSent));
       if (result == ESP_OK) {
         Serial.println("Sent with success");
       }
@@ -217,14 +231,15 @@ void loop() {
       esp_deep_sleep_start();
 
     }else{
-      if(distance < NORMALDISTANZ && counter < 3){
+
+      if(distance < SchwellenDistanz && counter < 3){
         counter = 0;
         Serial.println("myData.d = true");
         occupied = true;
         
-        myMessage.distanz_WC = distance;
-        myMessage.status_WC = occupied;
-        esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &myMessage, sizeof(myMessage));
+        myMessageToBeSent.distanzWC = distance;
+        myMessageToBeSent.statusWC = occupied;
+        esp_err_t result = esp_now_send(receiverAddress, (uint8_t *) &myMessageToBeSent, sizeof(myMessageToBeSent));
         if (result == ESP_OK) {
           Serial.println("Sent with success");
         }
