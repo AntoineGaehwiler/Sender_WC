@@ -92,6 +92,19 @@ void rotary_loop()
   }
 }
 
+void Ausgabe(){
+
+  Serial.print("Distanz: ");
+  Serial.println(distance);
+  Serial.print("Normaldistanz: ");
+  Serial.println(NORMALDISTANZ);
+  Serial.print("Counter ");
+  Serial.println(counter);
+  Serial.print("motionDetected ");
+  Serial.println(motionDetected);
+
+}
+
 void setup() {
   Serial.begin(115200);
 
@@ -179,14 +192,7 @@ void loop() {
     delay(100);
     distance = measureDistance();
 
-    Serial.print("Distanz: ");
-    Serial.println(distance);
-    Serial.print("Normaldistanz: ");
-    Serial.println(NORMALDISTANZ);
-    Serial.print("Counter ");
-    Serial.println(counter);
-    Serial.print("motionDetected ");
-    Serial.println(motionDetected);
+
     
       // Ultraschallsensor noch einmal messen, um den Wert zu bestÃ¤tigen
     if (distance >= NORMALDISTANZ && counter >= 3) {
