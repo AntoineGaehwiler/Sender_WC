@@ -22,6 +22,7 @@ bool distanceChangeMode;
 
 RTC_DATA_ATTR int counter = 0;
 RTC_DATA_ATTR long SchwellenDistanz = 0;
+RTC_DATA_ATTR long SchwellenDistanz = 0;
 RTC_DATA_ATTR bool motionDetected = false;
 RTC_DATA_ATTR bool occupied = false;
 
@@ -59,6 +60,7 @@ int measureDistance() {
 
 // callback when data is sent
 void messageSent(const uint8_t *macAddr, esp_now_send_status_t status) {
+void messageSent(const uint8_t *macAddr, esp_now_send_status_t status) {
   Serial.print("\r\nLast Packet Send Status:\t");
   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
 }
@@ -73,6 +75,7 @@ void messageReceived(const uint8_t* macAddr, const uint8_t* incomingData, int le
 }
 
 void IRAM_ATTR detectsMovement() {
+  myMessageToBeSent.statusWC = true;
   myMessageToBeSent.statusWC = true;
 }
 
@@ -216,6 +219,8 @@ void loop() {
   delay(50);
 
   // Wenn sich jemand in der NÃ¤he befindet, den ESP32 wieder in den Tiefschlaf versetzen
+  if (MotionDetection || motionDetected) {
+    motionDetected = true;
   if (MotionDetection || motionDetected) {
     motionDetected = true;
     distance = measureDistance();
