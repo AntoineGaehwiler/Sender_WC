@@ -22,7 +22,6 @@ bool distanceChangeMode;
 
 RTC_DATA_ATTR int counter = 0;
 RTC_DATA_ATTR long SchwellenDistanz = 0;
-RTC_DATA_ATTR long SchwellenDistanz = 0;
 RTC_DATA_ATTR bool motionDetected = false;
 RTC_DATA_ATTR bool occupied = false;
 
@@ -74,7 +73,6 @@ void messageReceived(const uint8_t* macAddr, const uint8_t* incomingData, int le
 }
 
 void IRAM_ATTR detectsMovement() {
-  myMessageToBeSent.statusWC = true;
   myMessageToBeSent.statusWC = true;
 }
 
@@ -199,15 +197,6 @@ void setup() {
 
 void loop() {
   // Wenn der Bewegungsmelder eine Bewegung detektiert hat
-
-
-  /*distance = measureDistance();
-  Serial.println(distance);
-  delay(300);
-  */
-
-  //if(occupied){myMessageToBeSent.statusWC = false; occupied = false;}else{myMessageToBeSent.statusWC = true; occupied = true;} 
-
   myMessageToBeSent.statusWC = occupied;
   myMessageToBeSent.distanzWC = distance;
   esp_err_t result = esp_now_send(receiverAddress, (uint8_t *) &myMessageToBeSent, sizeof(myMessageToBeSent));
@@ -220,24 +209,21 @@ void loop() {
   // Wenn sich jemand in der NÃ¤he befindet, den ESP32 wieder in den Tiefschlaf versetzen
   if (MotionDetection || motionDetected) {
     motionDetected = true;
-  if (MotionDetection || motionDetected) {
-    motionDetected = true;
     distance = measureDistance();
     delay(300);
     distance = measureDistance();
     if(debugMode){Ausgabe();}
     delay(100);
+
     // Wurde Schwellenwert ueberschritten (Sitz Leer) und dreimal nachgemesssen (counter)
     if (distance >= SchwellenDistanz && counter > 3) {
-
       PrepForMotiondetectionSleep();
       esp_deep_sleep_start();
     }else{
 
       // Wir innerhalb von drei Messungen Sitz wieder besetzt wird counter zurueckgesetzt
-      if((distance < SchwellenDistanz || distance > 900) && counter < 4){
+      if((distance < SchwellenDistanz || distance > 900) && counter < 4) {
         resetCounterAndResendData();
-
       }else{
         counter += 1;
       }
