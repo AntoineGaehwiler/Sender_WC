@@ -21,7 +21,7 @@ bool debugMode = true;
 bool distanceChangeMode;
 
 RTC_DATA_ATTR int counter = 0;
-RTC_DATA_ATTR long SchwellenDistanz = 0;
+RTC_DATA_ATTR long SchwellenDistanz = 30;
 RTC_DATA_ATTR bool motionDetected = false;
 RTC_DATA_ATTR bool occupied = false;
 
